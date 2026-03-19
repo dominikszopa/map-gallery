@@ -1,0 +1,11 @@
+
+# Ignore the photos and route files
+photos/*
+!photos/.gitkeep
+routes/*
+!routes/.gitkeep
+
+# Ignore the virtual environment and distribution files
+.venv/
+dist/
+

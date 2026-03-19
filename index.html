@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Map Gallery</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, sans-serif; }
+  #map { width: 100%; height: 100%; }
+
+  /* Thumbnail markers */
+  .photo-marker {
+    border: 2px solid #fff;
+    border-radius: 4px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    object-fit: cover;
+  }
+  .photo-marker:hover {
+    transform: scale(1.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    z-index: 1000 !important;
+  }
+
+  /* Lightbox overlay */
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+  #lightbox.active { display: flex; }
+
+  #lightbox img {
+    max-width: 90vw;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+
+  #lightbox .close-btn {
+    position: absolute;
+    top: 16px;
+    right: 24px;
+    color: #fff;
+    font-size: 36px;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0.8;
+  }
+  #lightbox .close-btn:hover { opacity: 1; }
+
+  #lightbox .nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  #lightbox .nav-btn {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    font-size: 24px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  #lightbox .nav-btn:hover { background: rgba(255,255,255,0.3); }
+  #lightbox .counter {
+    color: rgba(255,255,255,0.7);
+    font-size: 14px;
+  }
+  #lightbox .photo-date {
+    color: rgba(255,255,255,0.6);
+    font-size: 13px;
+    margin-top: 8px;
+  }
+
+  /* Route legend */
+  .route-legend {
+    background: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .route-legend-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .route-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .route-legend-color {
+    width: 20px;
+    height: 3px;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="lightbox">
+  <span class="close-btn" id="lb-close">&times;</span>
+  <img id="lb-img" src="" alt="Photo">
+  <div class="photo-date" id="lb-date"></div>
+  <div class="nav-bar">
+    <button class="nav-btn" id="lb-prev">&#8592;</button>
+    <span class="counter" id="lb-counter"></span>
+    <button class="nav-btn" id="lb-next">&#8594;</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(async function() {
+  const resp = await fetch('data.json');
+  const data = await resp.json();
+
+  const ROUTE_COLORS = ['#e63946', '#457b9d', '#2a9d8f', '#e9c46a', '#f4a261',
+                         '#264653', '#a8dadc', '#d62828', '#6a994e', '#bc6c25'];
+
+  const map = L.map('map', { zoomControl: true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 20,
+    subdomains: 'abcd',
+  }).addTo(map);
+
+  // Draw routes (one color per route)
+  let bounds = L.latLngBounds([]);
+  const legendItems = [];
+
+  data.routes.forEach((route, idx) => {
+    const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
+    for (const line of route.lines) {
+      const polyline = L.polyline(line.coords, {
+        color: color,
+        weight: 3,
+        opacity: 0.8,
+      }).addTo(map);
+      bounds.extend(polyline.getBounds());
+    }
+    legendItems.push({ name: route.name, color: color });
+  });
+
+  // Add photo markers
+  const photos = data.photos;
+
+  for (let i = 0; i < photos.length; i++) {
+    const p = photos[i];
+    bounds.extend([p.lat, p.lon]);
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<img src="${p.thumb}" class="photo-marker" style="width:60px;height:60px;" />`,
+      iconSize: [60, 60],
+      iconAnchor: [30, 30],
+    });
+
+    const marker = L.marker([p.lat, p.lon], { icon: icon, zIndexOffset: 500 }).addTo(map);
+    marker.on('click', () => openLightbox(i));
+  }
+
+  // Fit map to all content
+  if (bounds.isValid()) {
+    map.fitBounds(bounds.pad(0.05));
+  }
+
+  const legend = L.control({ position: 'bottomleft' });
+  legend.onAdd = function() {
+    const div = L.DomUtil.create('div', 'route-legend');
+    div.innerHTML = '<div class="route-legend-title">Routes</div>' +
+      legendItems.map(item =>
+        `<div class="route-legend-item">
+          <span class="route-legend-color" style="background:${item.color}"></span>
+          ${item.name}
+        </div>`
+      ).join('');
+    return div;
+  };
+  legend.addTo(map);
+
+  // Lightbox
+  const lightbox = document.getElementById('lightbox');
+  const lbImg = document.getElementById('lb-img');
+  const lbDate = document.getElementById('lb-date');
+  const lbCounter = document.getElementById('lb-counter');
+  let currentIdx = 0;
+
+  function openLightbox(idx) {
+    currentIdx = idx;
+    updateLightbox();
+    lightbox.classList.add('active');
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove('active');
+  }
+
+  function updateLightbox() {
+    const p = photos[currentIdx];
+    lbImg.src = p.full;
+    lbCounter.textContent = `${currentIdx + 1} / ${photos.length}`;
+    // Format "2022:09:21 09:10:17" -> "2022-09-21 09:10:17"
+    if (p.date) {
+      const parts = p.date.split(' ');
+      lbDate.textContent = parts[0].replace(/:/g, '-') + ' ' + (parts[1] || '');
+    } else {
+      lbDate.textContent = '';
+    }
+  }
+
+  function navigate(dir) {
+    currentIdx = (currentIdx + dir + photos.length) % photos.length;
+    updateLightbox();
+  }
+
+  document.getElementById('lb-close').addEventListener('click', closeLightbox);
+  document.getElementById('lb-prev').addEventListener('click', () => navigate(-1));
+  document.getElementById('lb-next').addEventListener('click', () => navigate(1));
+
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!lightbox.classList.contains('active')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') navigate(-1);
+    if (e.key === 'ArrowRight') navigate(1);
+  });
+})();
+</script>
+</body>
+</html>

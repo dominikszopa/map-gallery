@@ -11,9 +11,10 @@ import exifread
 from PIL import Image
 
 ROOT = Path(__file__).parent
-PHOTOS_DIR = ROOT / "photos"
-ROUTES_DIR = ROOT / "routes"
-DIST = ROOT / "dist"
+MEDIA = ROOT / "media"
+PHOTOS_DIR = MEDIA / "photos"
+ROUTES_DIR = MEDIA / "routes"
+DIST = MEDIA / "dist"
 THUMB_DIR = DIST / "thumbnails"
 FULL_DIR = DIST / "photos"
 THUMB_SIZE = (150, 150)

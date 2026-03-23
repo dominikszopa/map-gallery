@@ -62,6 +62,9 @@ def process_photos():
         date_tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
         date_str = str(date_tag) if date_tag else ""
 
+        desc_tag = tags.get("Image ImageDescription")
+        desc_str = str(desc_tag).strip() if desc_tag else ""
+
         # Generate thumbnail (with EXIF orientation correction)
         thumb_name = f.stem + ".jpg"
         with Image.open(f) as img:
@@ -80,6 +83,7 @@ def process_photos():
             "lat": lat,
             "lon": lon,
             "date": date_str,
+            "description": desc_str,
         })
 
     # Sort chronologically

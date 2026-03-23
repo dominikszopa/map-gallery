@@ -100,10 +100,17 @@
     color: rgba(255,255,255,0.7);
     font-size: 14px;
   }
+  #lightbox .photo-caption {
+    color: rgba(255,255,255,0.85);
+    font-size: 15px;
+    margin-top: 12px;
+    max-width: 90vw;
+    text-align: center;
+  }
   #lightbox .photo-date {
     color: rgba(255,255,255,0.6);
     font-size: 13px;
-    margin-top: 8px;
+    margin-top: 4px;
   }
 
   /* Route legend */
@@ -138,6 +145,7 @@
 <div id="lightbox">
   <span class="close-btn" id="lb-close">&times;</span>
   <img id="lb-img" src="" alt="Photo">
+  <div class="photo-caption" id="lb-caption"></div>
   <div class="photo-date" id="lb-date"></div>
   <div class="nav-bar">
     <button class="nav-btn" id="lb-prev">&#8592;</button>
@@ -219,6 +227,7 @@
   // Lightbox
   const lightbox = document.getElementById('lightbox');
   const lbImg = document.getElementById('lb-img');
+  const lbCaption = document.getElementById('lb-caption');
   const lbDate = document.getElementById('lb-date');
   const lbCounter = document.getElementById('lb-counter');
   let currentIdx = 0;
@@ -236,11 +245,13 @@
   function updateLightbox() {
     const p = photos[currentIdx];
     lbImg.src = p.full;
+    lbCaption.textContent = p.description || '';
     lbCounter.textContent = `${currentIdx + 1} / ${photos.length}`;
-    // Format "2022:09:21 09:10:17" -> "2022-09-21 09:10:17"
     if (p.date) {
-      const parts = p.date.split(' ');
-      lbDate.textContent = parts[0].replace(/:/g, '-') + ' ' + (parts[1] || '');
+      const [datePart] = p.date.split(' ');
+      const [y, m, d] = datePart.split(':');
+      const dt = new Date(+y, +m - 1, +d);
+      lbDate.textContent = dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     } else {
       lbDate.textContent = '';
     }

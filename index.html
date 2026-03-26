@@ -234,12 +234,50 @@
 
   function openLightbox(idx) {
     currentIdx = idx;
-    updateLightbox();
-    lightbox.classList.add('active');
+    showPhoto(false);
+  }
+
+  let savedZoom = null;
+  let savedCenter = null;
+
+  function showPhoto(animate) {
+    const p = photos[currentIdx];
+    // Save original view before first zoom
+    if (savedZoom === null) {
+      savedZoom = map.getZoom();
+      savedCenter = map.getCenter();
+    }
+    // Hide lightbox while moving
+    lightbox.classList.remove('active');
+
+    // Compute center offset so photo location appears at bottom center
+    const targetZoom = 5;
+    const mapSize = map.getSize();
+    const targetPoint = map.project([p.lat, p.lon], targetZoom);
+    const centerPoint = L.point(targetPoint.x, targetPoint.y - mapSize.y * 0.3);
+    const centerLatLng = map.unproject(centerPoint, targetZoom);
+
+    const onDone = () => {
+      updateLightbox();
+      lightbox.classList.add('active');
+    };
+
+    if (animate) {
+      map.once('moveend', onDone);
+      map.flyTo(centerLatLng, targetZoom, { duration: 0.6 });
+    } else {
+      map.setView(centerLatLng, targetZoom, { animate: false });
+      onDone();
+    }
   }
 
   function closeLightbox() {
     lightbox.classList.remove('active');
+    if (savedZoom !== null) {
+      map.flyTo(savedCenter, savedZoom, { duration: 0.6 });
+      savedZoom = null;
+      savedCenter = null;
+    }
   }
 
   function updateLightbox() {
@@ -259,7 +297,7 @@
 
   function navigate(dir) {
     currentIdx = (currentIdx + dir + photos.length) % photos.length;
-    updateLightbox();
+    showPhoto(true);
   }
 
   document.getElementById('lb-close').addEventListener('click', closeLightbox);

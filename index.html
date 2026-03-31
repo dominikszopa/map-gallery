@@ -57,12 +57,14 @@
 
   #lb-slider {
     position: relative;
-    width: 90vw;
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
   }
   #lb-strip {
     display: flex;
     align-items: center;
+    height: 100%;
   }
   #lightbox.active #lb-strip {
     will-change: transform;
@@ -71,61 +73,89 @@
     transition: transform 0.3s ease;
   }
   .lb-slide {
-    width: 90vw;
+    width: 100vw;
+    height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
   }
   .lb-slide img {
-    max-width: 90vw;
-    max-height: 80vh;
+    max-width: 98vw;
+    max-height: 96vh;
     border-radius: 4px;
-    pointer-events: none;
+    cursor: pointer;
   }
+
+  #lightbox .close-btn,
+  #lightbox .nav-btn,
+  #lightbox .nav-bar {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  #lightbox.show-controls .close-btn,
+  #lightbox.show-controls .nav-btn,
+  #lightbox.show-controls .nav-bar {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #lightbox.show-controls .close-btn:hover { opacity: 1; }
 
   #lightbox .close-btn {
     position: absolute;
     top: 16px;
-    right: 24px;
+    right: 16px;
     color: #fff;
     font-size: 36px;
     cursor: pointer;
     line-height: 1;
-    opacity: 0.8;
+    background: rgba(0,0,0,0.5);
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
   }
-  #lightbox .close-btn:hover { opacity: 1; }
 
   #lightbox .nav-bar {
     position: absolute;
     bottom: 24px;
-    left: 0;
-    right: 0;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-  }
-  #lightbox .nav-controls {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+    gap: 4px;
+    padding: 10px 20px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    z-index: 10001;
   }
   #lightbox .nav-btn {
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.3);
-    color: #fff;
-    font-size: 24px;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
+    background: rgba(0,0,0,0.5);
+    border: none;
+    color: rgba(255,255,255,0.85);
+    font-size: 48px;
+    font-weight: 200;
+    width: 56px;
+    height: 80px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s;
+    transition: color 0.15s, background 0.15s;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10001;
   }
-  #lightbox .nav-btn:hover { background: rgba(255,255,255,0.3); }
+  #lightbox .nav-btn:hover { color: #fff; background: rgba(0,0,0,0.7); }
+  #lb-prev { left: 0; border-radius: 0 6px 6px 0; }
+  #lb-next { right: 0; border-radius: 6px 0 0 6px; }
   #lightbox .counter {
     color: rgba(255,255,255,0.7);
     font-size: 14px;
@@ -178,14 +208,12 @@
       <div class="lb-slide"><img id="lb-img-next" src="" alt=""></div>
     </div>
   </div>
+  <button class="nav-btn" id="lb-prev">&#8249;</button>
+  <button class="nav-btn" id="lb-next">&#8250;</button>
   <div class="nav-bar">
     <div class="photo-caption" id="lb-caption"></div>
     <div class="photo-date" id="lb-date"></div>
-    <div class="nav-controls">
-      <button class="nav-btn" id="lb-prev">&#8592;</button>
-      <span class="counter" id="lb-counter"></span>
-      <button class="nav-btn" id="lb-next">&#8594;</button>
-    </div>
+    <span class="counter" id="lb-counter"></span>
   </div>
 </div>
 
@@ -269,7 +297,7 @@
   const lbDate = document.getElementById('lb-date');
   const lbCounter = document.getElementById('lb-counter');
   const lbSlider = document.getElementById('lb-slider');
-  const slideWidth = () => lbSlider.offsetWidth || window.innerWidth * 0.9;
+  const slideWidth = () => lbSlider.offsetWidth || window.innerWidth;
   let currentIdx = 0;
   let sliding = false;
 
@@ -307,12 +335,9 @@
     showPhoto();
   }
 
-  let savedZoom = null;
-  let savedCenter = null;
-
   function moveMapToPhoto(animate) {
     const p = photos[currentIdx];
-    const targetZoom = 5;
+    const targetZoom = 7;
     const mapSize = map.getSize();
     const targetPoint = map.project([p.lat, p.lon], targetZoom);
     const centerPoint = L.point(targetPoint.x, targetPoint.y - mapSize.y * 0.3);
@@ -326,10 +351,7 @@
   }
 
   function showPhoto() {
-    if (savedZoom === null) {
-      savedZoom = map.getZoom();
-      savedCenter = map.getCenter();
-    }
+    lightbox.classList.remove('show-controls');
     lightbox.classList.add('active');
     loadStrip();
     updateMeta();
@@ -338,11 +360,11 @@
 
   function closeLightbox() {
     lightbox.classList.remove('active');
-    if (savedZoom !== null) {
-      map.flyTo(savedCenter, savedZoom, { duration: 0.6 });
-      savedZoom = null;
-      savedCenter = null;
-    }
+    lightbox.style.background = '';
+    touchStartX = null;
+    touchStartY = null;
+    touchDragging = false;
+    touchDraggingV = false;
   }
 
   function completeSlide(dir) {
@@ -350,10 +372,12 @@
     loadStrip();
     updateMeta();
     moveMapToPhoto(true);
+    lightbox.classList.remove('show-controls');
     sliding = false;
   }
 
   function animateSlide(dir) {
+    if (sliding) return;
     sliding = true;
     const w = slideWidth();
     const target = dir === -1 ? 0 : -2 * w;
@@ -362,14 +386,14 @@
     lbStrip.addEventListener('transitionend', () => completeSlide(dir), { once: true });
   }
 
-  function slideNavigate(dir) {
-    if (sliding) return;
-    animateSlide(dir);
-  }
-
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
-  document.getElementById('lb-prev').addEventListener('click', () => slideNavigate(-1));
-  document.getElementById('lb-next').addEventListener('click', () => slideNavigate(1));
+  document.getElementById('lb-prev').addEventListener('click', () => animateSlide(-1));
+  document.getElementById('lb-next').addEventListener('click', () => animateSlide(1));
+
+  lbSlider.addEventListener('click', (e) => {
+    if (sliding) return;
+    lightbox.classList.toggle('show-controls');
+  });
 
   lightbox.addEventListener('click', (e) => {
     if (e.target === lightbox) closeLightbox();
@@ -378,20 +402,22 @@
   document.addEventListener('keydown', (e) => {
     if (!lightbox.classList.contains('active')) return;
     if (e.key === 'Escape') closeLightbox();
-    if (e.key === 'ArrowLeft') slideNavigate(-1);
-    if (e.key === 'ArrowRight') slideNavigate(1);
+    if (e.key === 'ArrowLeft') animateSlide(-1);
+    if (e.key === 'ArrowRight') animateSlide(1);
   });
 
   // Touch swipe with live drag tracking
   let touchStartX = null;
   let touchStartY = null;
-  let touchDragging = false;
+  let touchDragging = false;   // horizontal
+  let touchDraggingV = false;  // vertical
 
   lightbox.addEventListener('touchstart', (e) => {
     if (sliding) return;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     touchDragging = false;
+    touchDraggingV = false;
     lbStrip.classList.remove('animating');
   }, { passive: true });
 
@@ -399,30 +425,57 @@
     if (touchStartX === null || sliding) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
-    // Lock to horizontal after first significant move
-    if (!touchDragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-      touchDragging = true;
+    // Lock direction after first significant move
+    if (!touchDragging && !touchDraggingV && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      if (Math.abs(dy) > Math.abs(dx)) {
+        touchDraggingV = true;
+      } else {
+        touchDragging = true;
+      }
     }
     if (touchDragging) {
       e.preventDefault();
       const w = slideWidth();
       lbStrip.style.transform = `translateX(${-w + dx}px)`;
     }
+    if (touchDraggingV) {
+      e.preventDefault();
+      const opacity = Math.max(0, 1 - Math.abs(dy) / 300);
+      lightbox.style.background = `rgba(0,0,0,${0.9 * opacity})`;
+      lbStrip.style.transform = `translateX(-${slideWidth()}px) translateY(${dy}px)`;
+    }
   }, { passive: false });
 
   lightbox.addEventListener('touchend', (e) => {
     if (touchStartX === null || sliding) { touchStartX = null; return; }
     const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
     touchStartX = null;
     touchStartY = null;
 
-    if (touchDragging && Math.abs(dx) > 50) {
+    if (touchDraggingV) {
+      if (Math.abs(dy) > 80) {
+        closeLightbox();
+      }
+      lightbox.style.background = '';
+      lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
+      touchDraggingV = false;
+    } else if (touchDragging && Math.abs(dx) > 50) {
       animateSlide(dx < 0 ? 1 : -1);
     } else {
       lbStrip.classList.add('animating');
       lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
     }
     touchDragging = false;
+  }, { passive: true });
+
+  lightbox.addEventListener('touchcancel', () => {
+    touchStartX = null;
+    touchStartY = null;
+    touchDragging = false;
+    touchDraggingV = false;
+    lightbox.style.background = '';
+    lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
   }, { passive: true });
 })();
 </script>

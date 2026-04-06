@@ -1,11 +1,9 @@
 
-# Ignore the photos and route files
-media/photos/*
-!media/photos/.gitkeep
-media/routes/*
-!media/routes/.gitkeep
+# Ignore all files in media/ but keep directory structure via .gitkeep
+media/**/*
+!media/**/
+!media/**/.gitkeep
 
-# Ignore the virtual environment and distribution files
+# Ignore the virtual environment
 .venv/
-media/dist/
 

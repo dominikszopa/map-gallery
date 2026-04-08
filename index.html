@@ -10,8 +10,8 @@
   html, body { height: 100%; font-family: system-ui, sans-serif; }
   #map { width: 100%; height: 100%; }
 
-  /* Camera icon markers */
-  .camera-icon {
+  /* Map icon markers */
+  .camera-icon, .video-icon {
     cursor: pointer;
     font-size: 24px;
     line-height: 1;
@@ -19,7 +19,7 @@
     transition: transform 0.15s;
     position: relative;
   }
-  .camera-icon:hover {
+  .camera-icon:hover, .video-icon:hover {
     transform: scale(1.3);
   }
 
@@ -39,7 +39,8 @@
     pointer-events: none;
     z-index: 2000;
   }
-  .camera-icon:hover .photo-preview {
+  .camera-icon:hover .photo-preview,
+  .video-icon:hover .photo-preview {
     display: block;
   }
 
@@ -80,7 +81,7 @@
     justify-content: center;
     flex-shrink: 0;
   }
-  .lb-slide img {
+  .lb-slide img, .lb-slide video {
     max-width: 98vw;
     max-height: 96vh;
     border-radius: 4px;
@@ -203,9 +204,9 @@
   <span class="close-btn" id="lb-close">&times;</span>
   <div id="lb-slider">
     <div id="lb-strip">
-      <div class="lb-slide"><img id="lb-img-prev" src="" alt=""></div>
-      <div class="lb-slide"><img id="lb-img" src="" alt="Photo"></div>
-      <div class="lb-slide"><img id="lb-img-next" src="" alt=""></div>
+      <div class="lb-slide"></div>
+      <div class="lb-slide"></div>
+      <div class="lb-slide"></div>
     </div>
   </div>
   <button class="nav-btn" id="lb-prev">&#8249;</button>
@@ -250,16 +251,20 @@
     legendItems.push({ name: route.name, color: color });
   });
 
-  // Add photo markers
-  const photos = data.photos;
+  // Merge photos and videos into a single media array, sorted by date
+  const mediaItems = [...data.photos, ...(data.videos || [])].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
-  for (let i = 0; i < photos.length; i++) {
-    const p = photos[i];
+  // Add markers for all media
+  for (let i = 0; i < mediaItems.length; i++) {
+    const p = mediaItems[i];
     bounds.extend([p.lat, p.lon]);
 
+    const isVideo = p.type === 'video';
+    const iconClass = isVideo ? 'video-icon' : 'camera-icon';
+    const emoji = isVideo ? '&#127909;' : '&#128248;';
     const icon = L.divIcon({
       className: '',
-      html: `<div class="camera-icon">&#128248;<img src="${p.thumb}" class="photo-preview" /></div>`,
+      html: `<div class="${iconClass}">${emoji}<img src="${p.thumb}" class="photo-preview" /></div>`,
       iconSize: [24, 24],
       iconAnchor: [12, 12],
     });
@@ -290,9 +295,7 @@
   // Lightbox
   const lightbox = document.getElementById('lightbox');
   const lbStrip = document.getElementById('lb-strip');
-  const lbImgPrev = document.getElementById('lb-img-prev');
-  const lbImg = document.getElementById('lb-img');
-  const lbImgNext = document.getElementById('lb-img-next');
+  const lbSlides = lbStrip.querySelectorAll('.lb-slide');
   const lbCaption = document.getElementById('lb-caption');
   const lbDate = document.getElementById('lb-date');
   const lbCounter = document.getElementById('lb-counter');
@@ -302,24 +305,47 @@
   let sliding = false;
 
   function wrapIdx(i) {
-    return (i + photos.length) % photos.length;
+    return (i + mediaItems.length) % mediaItems.length;
+  }
+
+  function setSlideContent(slideEl, item) {
+    slideEl.innerHTML = '';
+    if (item.type === 'video') {
+      const video = document.createElement('video');
+      video.src = item.video;
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = 'metadata';
+      slideEl.appendChild(video);
+    } else {
+      const img = document.createElement('img');
+      img.src = item.full;
+      img.alt = 'Photo';
+      slideEl.appendChild(img);
+    }
+  }
+
+  function pauseAllVideos() {
+    lbStrip.querySelectorAll('video').forEach(v => { v.pause(); });
   }
 
   function loadStrip() {
-    const prev = photos[wrapIdx(currentIdx - 1)];
-    const curr = photos[currentIdx];
-    const next = photos[wrapIdx(currentIdx + 1)];
-    lbImgPrev.src = prev.full;
-    lbImg.src = curr.full;
-    lbImgNext.src = next.full;
+    const prev = mediaItems[wrapIdx(currentIdx - 1)];
+    const curr = mediaItems[currentIdx];
+    const next = mediaItems[wrapIdx(currentIdx + 1)];
+    setSlideContent(lbSlides[0], prev);
+    setSlideContent(lbSlides[1], curr);
+    setSlideContent(lbSlides[2], next);
     lbStrip.classList.remove('animating');
     lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
+    const currentVideo = lbSlides[1].querySelector('video');
+    if (currentVideo) currentVideo.play();
   }
 
   function updateMeta() {
-    const p = photos[currentIdx];
+    const p = mediaItems[currentIdx];
     lbCaption.textContent = p.description || '';
-    lbCounter.textContent = `${currentIdx + 1} / ${photos.length}`;
+    lbCounter.textContent = `${currentIdx + 1} / ${mediaItems.length}`;
     if (p.date) {
       const [datePart] = p.date.split(' ');
       const [y, m, d] = datePart.split(':');
@@ -336,7 +362,7 @@
   }
 
   function moveMapToPhoto(animate) {
-    const p = photos[currentIdx];
+    const p = mediaItems[currentIdx];
     const targetZoom = 7;
     const mapSize = map.getSize();
     const targetPoint = map.project([p.lat, p.lon], targetZoom);
@@ -359,6 +385,7 @@
   }
 
   function closeLightbox() {
+    pauseAllVideos();
     lightbox.classList.remove('active');
     lightbox.style.background = '';
     touchStartX = null;
@@ -368,6 +395,7 @@
   }
 
   function completeSlide(dir) {
+    pauseAllVideos();
     currentIdx = wrapIdx(currentIdx + dir);
     loadStrip();
     updateMeta();

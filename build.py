@@ -2,7 +2,9 @@
 """Build script: extracts photo metadata, generates thumbnails, parses routes."""
 
 import json
+import re
 import shutil
+import subprocess
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -17,7 +19,9 @@ ROUTES_DIR = MEDIA / "routes"
 DIST = MEDIA / "dist"
 THUMB_DIR = DIST / "thumbnails"
 FULL_DIR = DIST / "photos"
+VIDEO_DIR = DIST / "videos"
 THUMB_SIZE = (150, 150)
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
 
 KML_NS = "http://www.opengis.net/kml/2.2"
 
@@ -33,16 +37,25 @@ def dms_to_decimal(dms_value, ref):
     return decimal
 
 
+def iter_media_files(extensions):
+    """Yield files from PHOTOS_DIR matching the given extensions."""
+    for f in sorted(PHOTOS_DIR.iterdir()):
+        if f.suffix.lower() not in extensions or "Zone.Identifier" in f.name:
+            continue
+        if f.is_file():
+            yield f
+
+
+PHOTO_EXTENSIONS = {
+    ext for ext in {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".webp"}
+} - {".dng"}
+
+
 def process_photos():
     """Extract GPS, date; generate thumbnails; copy full images."""
     photos = []
-    skip_ext = {".dng"}
 
-    for f in sorted(PHOTOS_DIR.iterdir()):
-        if f.suffix.lower() in skip_ext or "Zone.Identifier" in f.name:
-            continue
-        if not f.is_file():
-            continue
+    for f in iter_media_files(PHOTO_EXTENSIONS):
 
         with open(f, "rb") as fh:
             tags = exifread.process_file(fh, details=False)
@@ -84,11 +97,84 @@ def process_photos():
             "lon": lon,
             "date": date_str,
             "description": desc_str,
+            "type": "photo",
         })
 
     # Sort chronologically
     photos.sort(key=lambda p: p["date"])
     return photos
+
+
+def process_videos():
+    """Extract GPS, date from videos; generate thumbnail screenshots; copy videos."""
+    videos = []
+
+    for f in iter_media_files(VIDEO_EXTENSIONS):
+
+        # Get metadata via ffprobe
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", f],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"  Skipping {f.name} (ffprobe failed)")
+            continue
+
+        fmt = json.loads(result.stdout).get("format", {})
+        tags = fmt.get("tags", {})
+
+        # Parse GPS from location tag (e.g. "+52.016649+127.743537/")
+        location = tags.get("location") or tags.get("com.apple.quicktime.location.ISO6709")
+        if not location:
+            print(f"  Skipping {f.name} (no GPS data)")
+            continue
+
+        m = re.match(r"([+-][\d.]+)([+-][\d.]+)", location)
+        if not m:
+            print(f"  Skipping {f.name} (cannot parse location: {location})")
+            continue
+
+        lat = float(m.group(1))
+        lon = float(m.group(2))
+
+        # Parse date — normalize to YYYY:MM:DD HH:MM:SS to match EXIF format
+        creation_time = tags.get("creation_time", "")
+        date_str = creation_time.replace("T", " ").replace("Z", "").split(".")[0] if creation_time else ""
+        if date_str:
+            date_str = date_str.replace("-", ":", 2)
+
+        # Description from comment tag
+        desc_str = tags.get("comment", "").strip()
+
+        # Generate thumbnail from first few seconds (suffix avoids collision with photo thumbs)
+        thumb_name = f.stem + "_video.jpg"
+        thumb_path = THUMB_DIR / thumb_name
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", "1", "-i", str(f), "-vframes", "1",
+             "-vf", f"scale={THUMB_SIZE[0]}:{THUMB_SIZE[1]}:force_original_aspect_ratio=decrease",
+             str(thumb_path)],
+            capture_output=True,
+        )
+        if not thumb_path.exists():
+            print(f"  Skipping {f.name} (thumbnail generation failed)")
+            continue
+
+        # Copy video
+        shutil.copy2(f, VIDEO_DIR / f.name)
+
+        videos.append({
+            "filename": f.name,
+            "thumb": f"thumbnails/{thumb_name}",
+            "video": f"videos/{f.name}",
+            "lat": lat,
+            "lon": lon,
+            "date": date_str,
+            "description": desc_str,
+            "type": "video",
+        })
+
+    videos.sort(key=lambda v: v["date"])
+    return videos
 
 
 def parse_kmz(kmz_path):
@@ -131,10 +217,15 @@ def build():
         shutil.rmtree(DIST)
     THUMB_DIR.mkdir(parents=True)
     FULL_DIR.mkdir(parents=True)
+    VIDEO_DIR.mkdir(parents=True)
 
     print("Processing photos...")
     photos = process_photos()
     print(f"  {len(photos)} photos with GPS data")
+
+    print("Processing videos...")
+    videos = process_videos()
+    print(f"  {len(videos)} videos with GPS data")
 
     print("Processing routes...")
     routes = []
@@ -147,7 +238,7 @@ def build():
         print(f"  {route['name']}: {len(route['lines'])} lines, {total_points} points")
 
     # Write data
-    data = {"photos": photos, "routes": routes}
+    data = {"photos": photos, "videos": videos, "routes": routes}
     with open(DIST / "data.json", "w") as f:
         json.dump(data, f)
 

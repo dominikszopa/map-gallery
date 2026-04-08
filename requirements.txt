@@ -1,0 +1,4 @@
+exifread
+mutagen
+piexif
+Pillow

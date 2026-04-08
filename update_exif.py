@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Update EXIF data of photos in media/photos/ using metadata from media/exif.csv.
+"""Update EXIF data of photos and videos in media/photos/ using metadata from media/exif.csv.
 
 Updates GPS coordinates, location, and description fields.
+Supports JPEG (via piexif) and MP4 (via mutagen).
 
 Usage:
     python3 update_exif.py              # dry-run (default)
@@ -14,6 +15,7 @@ import struct
 import sys
 
 import piexif
+from mutagen.mp4 import MP4
 from PIL import Image
 
 PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "media", "photos")
@@ -102,6 +104,46 @@ def update_photo(filepath, lat, lon, location, description, dry_run=True):
     return True
 
 
+def update_mp4(filepath, lat, lon, location, description, dry_run=True):
+    """Update metadata for a single MP4 file."""
+    changes = []
+
+    mp4 = MP4(filepath)
+
+    if lat is not None and lon is not None:
+        # ISO 6709 format: +DD.DDDD+DDD.DDDD/
+        lat_sign = "+" if lat >= 0 else ""
+        lon_sign = "+" if lon >= 0 else ""
+        iso6709 = f"{lat_sign}{lat:.6f}{lon_sign}{lon:.6f}/"
+        mp4["\xa9xyz"] = [iso6709]
+        changes.append(f"GPS: {lat}, {lon}")
+
+    desc_parts = []
+    if description:
+        desc_parts.append(description)
+    if location:
+        desc_parts.append(location)
+
+    if desc_parts:
+        full_desc = " - ".join(desc_parts)
+        mp4["\xa9des"] = [full_desc]
+        mp4["\xa9cmt"] = [full_desc]
+        changes.append(f"Description: {full_desc[:60]}...")
+
+    if not changes:
+        return False
+
+    label = "[DRY RUN] " if dry_run else ""
+    print(f"  {label}{os.path.basename(filepath)}")
+    for c in changes:
+        print(f"    {c}")
+
+    if not dry_run:
+        mp4.save()
+
+    return True
+
+
 def main():
     dry_run = "--write" not in sys.argv
 
@@ -142,8 +184,13 @@ def main():
                 skipped += 1
                 continue
 
-            if update_photo(filepath, lat, lon, location, description, dry_run):
-                updated += 1
+            ext = os.path.splitext(filename)[1].lower()
+            if ext == ".mp4":
+                if update_mp4(filepath, lat, lon, location, description, dry_run):
+                    updated += 1
+            else:
+                if update_photo(filepath, lat, lon, location, description, dry_run):
+                    updated += 1
 
     print(f"\nDone. Updated: {updated}, Skipped: {skipped}, Not found: {not_found}")
 

@@ -7,3 +7,6 @@ media/**/*
 # Ignore the virtual environment
 .venv/
 
+.stignore
+
+.playwright-mcp/

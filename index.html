@@ -252,10 +252,15 @@
   data.routes.forEach((route, idx) => {
     const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
     for (const line of route.lines) {
+      L.polyline(line.coords, {
+        color: '#fff',
+        weight: 9,
+        opacity: 0.8,
+      }).addTo(map);
       const polyline = L.polyline(line.coords, {
         color: color,
         weight: 5,
-        opacity: 0.8,
+        opacity: 1,
       }).addTo(map);
       bounds.extend(polyline.getBounds());
     }

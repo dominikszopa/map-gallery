@@ -32,6 +32,13 @@
   .camera-icon:hover, .video-icon:hover {
     transform: scale(1.3);
   }
+  .camera-icon.active, .video-icon.active {
+    background: #ff6b35;
+    transform: scale(1.5);
+    box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.45),
+                0 2px 8px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+  }
 
   /* Thumbnail popup on hover */
   .photo-preview {
@@ -52,6 +59,9 @@
   .camera-icon:hover .photo-preview,
   .video-icon:hover .photo-preview {
     display: block;
+  }
+  body.lightbox-open .photo-preview {
+    display: none !important;
   }
 
   /* Lightbox overlay */
@@ -92,14 +102,15 @@
     flex-shrink: 0;
   }
   .lb-slide img, .lb-slide video {
-    max-width: 98vw;
-    max-height: 96vh;
+    max-width: 100vw;
+    max-height: 100vh;
     border: 10px solid black;
     border-radius: 4px;
     cursor: pointer;
   }
 
   #lightbox .close-btn,
+  #lightbox .fs-btn,
   #lightbox .nav-btn,
   #lightbox .nav-bar {
     opacity: 0;
@@ -107,19 +118,20 @@
     transition: opacity 0.3s;
   }
   #lightbox.show-controls .close-btn,
+  #lightbox.show-controls .fs-btn,
   #lightbox.show-controls .nav-btn,
   #lightbox.show-controls .nav-bar {
     opacity: 1;
     pointer-events: auto;
   }
-  #lightbox.show-controls .close-btn:hover { opacity: 1; }
+  #lightbox.show-controls .close-btn:hover,
+  #lightbox.show-controls .fs-btn:hover { opacity: 1; }
 
-  #lightbox .close-btn {
+  #lightbox .close-btn,
+  #lightbox .fs-btn {
     position: absolute;
     top: 16px;
-    right: 16px;
     color: #fff;
-    font-size: 36px;
     cursor: pointer;
     line-height: 1;
     background: rgba(0,0,0,0.5);
@@ -131,6 +143,23 @@
     justify-content: center;
     z-index: 10002;
   }
+  #lightbox .close-btn {
+    right: 16px;
+    font-size: 36px;
+  }
+  #lightbox .fs-btn {
+    right: 68px;
+    padding: 0;
+    border: none;
+  }
+  #lightbox .fs-btn svg {
+    width: 22px;
+    height: 22px;
+    fill: #fff;
+  }
+  #lightbox .fs-btn .fs-exit-icon { display: none; }
+  #lightbox.fullscreen .fs-btn .fs-enter-icon { display: none; }
+  #lightbox.fullscreen .fs-btn .fs-exit-icon { display: block; }
 
   #lightbox .nav-bar {
     position: absolute;
@@ -213,6 +242,10 @@
 
 <div id="lightbox">
   <span class="close-btn" id="lb-close">&times;</span>
+  <button class="fs-btn" id="lb-fs" title="Toggle fullscreen">
+    <svg class="fs-enter-icon" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+    <svg class="fs-exit-icon" viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+  </button>
   <div id="lb-slider">
     <div id="lb-strip">
       <div class="lb-slide"></div>
@@ -274,6 +307,7 @@
   const CAMERA_SVG = '<svg viewBox="0 0 24 24"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/><path d="M9 2 7.17 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3.17L15 2H9zm3 15a5 5 0 1 1 0-10 5 5 0 0 1 0 10z"/></svg>';
   const VIDEO_SVG = '<svg viewBox="0 0 24 24"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>';
 
+  const markers = [];
   for (let i = 0; i < mediaItems.length; i++) {
     const p = mediaItems[i];
     bounds.extend([p.lat, p.lon]);
@@ -290,6 +324,7 @@
 
     const marker = L.marker([p.lat, p.lon], { icon: icon, zIndexOffset: 500 }).addTo(map);
     marker.on('click', () => openLightbox(i));
+    markers.push(marker);
   }
 
   // Fit map to all content
@@ -385,7 +420,7 @@
     const targetZoom = 7;
     const mapSize = map.getSize();
     const targetPoint = map.project([p.lat, p.lon], targetZoom);
-    const centerPoint = L.point(targetPoint.x, targetPoint.y - mapSize.y * 0.3);
+    const centerPoint = L.point(targetPoint.x - mapSize.x * 0.4, targetPoint.y - mapSize.y * 0.4);
     const centerLatLng = map.unproject(centerPoint, targetZoom);
 
     if (animate) {
@@ -395,18 +430,46 @@
     }
   }
 
+  function highlightCurrentMarker() {
+    markers.forEach((m, i) => {
+      const el = m.getElement();
+      if (!el) return;
+      const inner = el.querySelector('.camera-icon, .video-icon');
+      if (inner) inner.classList.toggle('active', i === currentIdx);
+    });
+  }
+
   function showPhoto() {
     lightbox.classList.remove('show-controls');
     lightbox.classList.add('active');
+    document.body.classList.add('lightbox-open');
     loadStrip();
     updateMeta();
     moveMapToPhoto(false);
+    highlightCurrentMarker();
+    if (!fullscreenElement()) {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) {
+        const p = req.call(el);
+        if (p && p.catch) p.catch(() => {});
+      }
+    }
   }
 
   function closeLightbox() {
     pauseAllVideos();
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    }
     lightbox.classList.remove('active');
+    document.body.classList.remove('lightbox-open');
     lightbox.style.background = '';
+    markers.forEach(m => {
+      const el = m.getElement();
+      const inner = el && el.querySelector('.camera-icon, .video-icon');
+      if (inner) inner.classList.remove('active');
+    });
     touchStartX = null;
     touchStartY = null;
     touchDragging = false;
@@ -419,6 +482,7 @@
     loadStrip();
     updateMeta();
     moveMapToPhoto(true);
+    highlightCurrentMarker();
     lightbox.classList.remove('show-controls');
     sliding = false;
   }
@@ -436,6 +500,28 @@
   document.getElementById('lb-close').addEventListener('click', closeLightbox);
   document.getElementById('lb-prev').addEventListener('click', () => animateSlide(-1));
   document.getElementById('lb-next').addEventListener('click', () => animateSlide(1));
+
+  const fsBtn = document.getElementById('lb-fs');
+  function fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement;
+  }
+  function toggleFullscreen(e) {
+    e.stopPropagation();
+    if (fullscreenElement()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const el = document.documentElement;
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+    }
+  }
+  fsBtn.addEventListener('click', toggleFullscreen);
+  function syncFullscreenClass() {
+    lightbox.classList.toggle('fullscreen', !!fullscreenElement());
+    lbStrip.classList.remove('animating');
+    lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
+  }
+  document.addEventListener('fullscreenchange', syncFullscreenClass);
+  document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
 
   lbSlider.addEventListener('click', (e) => {
     if (sliding) return;
@@ -524,6 +610,17 @@
     lightbox.style.background = '';
     lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
   }, { passive: true });
+
+  window.addEventListener('resize', () => {
+    if (!lightbox.classList.contains('active') || sliding) return;
+    touchStartX = null;
+    touchStartY = null;
+    touchDragging = false;
+    touchDraggingV = false;
+    lightbox.style.background = '';
+    lbStrip.classList.remove('animating');
+    lbStrip.style.transform = `translateX(-${slideWidth()}px)`;
+  });
 })();
 </script>
 </body>
